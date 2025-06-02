@@ -759,6 +759,19 @@ Module Renaming.
     exact Hinv.
   Qed.
 
+  Lemma renaming_inv3 (r : renaming) : exists (r' : renaming), renamings_inv r' r /\ renamings_inv r r'.
+  Proof.
+    destruct r as [f BH].
+    destruct BH as [f' [Hbij Hinv]].
+    assert (BH': Bijective f').
+    { unfold Bijective. exists f. auto. }
+    exists (exist _ f' BH').
+    unfold renamings_inv.
+    split.
+    exact Hbij.
+    exact Hinv.
+  Qed.
+
   Fixpoint rename_expr (r : renaming) (e : expr) : expr :=
     match e with
     | Var x => Var (rename_id r x) 
@@ -814,54 +827,47 @@ Module Renaming.
     exact Hy.
   Qed.
   
+  Lemma rename_simpl (r : renaming) (st : state Z) (i : id) (x : Z) :
+    rename_state r ((i, x) :: st) = (rename_id r i, x) :: rename_state r st.
+  Proof.
+    destruct r as [f BH].
+    unfold rename_state.
+    unfold rename_id.
+    reflexivity.
+  Qed.
+
+  Lemma rename_equiv' (r : renaming) (st : state Z) (x : id) (z : Z) :
+    st / x => z -> (rename_state r st) / rename_id r x => z.
+  Proof.
+    intros.
+    induction H.
+    - rewrite rename_simpl.
+      apply st_binds_hd.
+    - rewrite rename_simpl.
+      apply st_binds_tl.
+      + destruct r as [f [f' [Hbij Hinv]]].
+        unfold rename_id.
+        congruence.
+      + assumption.
+  Qed.
+
+  Lemma rename_equiv (r : renaming) (st : state Z) (x : id) (z : Z) :
+    st / x => z <-> (rename_state r st) / rename_id r x => z.
+  Proof.
+    split; intros.
+      - apply rename_equiv'; auto.
+      - pose proof (renaming_inv3 r) as [r' [Hinv Hinv']].
+        rewrite <- (re_rename_state r' r Hinv st) in *.
+        rewrite (re_rename_state r r' Hinv' (rename_state r st)) in H.
+        rewrite <- (Hinv x) in *.
+        rewrite (Hinv' (rename_id r x)) in H.
+        apply (rename_equiv' r' (rename_state r st)).
+        assumption.
+  Qed.
+
   Lemma eval_renaming_invariance (e : expr) (st : state Z) (z : Z) (r: renaming) :
     [| e |] st => z <-> [| rename_expr r e |] (rename_state r st) => z.
   Proof.
-    (* destruct r as [f [f' [Hbij Hinv]]]. *)
-    assert (rename_simpl: forall st i x, rename_state r ((i, x) :: st) = (rename_id r i, x) :: rename_state r st).
-    { intros.
-      destruct r as [f BH].
-      unfold rename_state.
-      unfold rename_id.
-      reflexivity.
-    }
-    assert (rename_equiv: forall (x : id) (z: Z), st / x => z <-> (rename_state r st) / (rename_id r x) => z).
-    { split; intros.
-      - induction H.
-        + rewrite rename_simpl.
-          apply st_binds_hd.
-        + rewrite rename_simpl.
-          apply st_binds_tl.
-          * destruct r as [f [f' [Hbij Hinv]]].
-            unfold rename_id.
-            congruence.
-          * assumption.
-      - remember (rename_state r st) as st'.
-        remember (rename_id r x) as x'.
-        generalize dependent st'.
-        induction st.
-        + intros. rewrite Heqst' in H.
-          inversion H.
-        + intros.
-          inversion H; subst; destruct a.
-          * remember (rename_simpl st i z1).
-            rewrite e0 in H0; subst.
-            inversion H0; subst.
-            assert (x = i).
-            { destruct r as [f [f' [Hbij Hinv]]]. unfold rename_id in H0. congruence. }
-            rewrite H1.
-            apply st_binds_hd.
-          * remember (rename_simpl st i z1).
-            rewrite e0 in H2; subst.
-            inversion H2; subst.
-            apply st_binds_tl.
-            -- destruct r as [f [f' [Hbij Hinv]]].
-               congruence.
-            -- specialize (IHst (rename_state r st)).
-               assert (rename_state r st = rename_state r st) by reflexivity.
-               specialize (IHst H3 H1).
-               assumption.
-    }
     split.
     - intros H. induction H; econstructor; eauto.
       apply rename_equiv.
@@ -875,10 +881,10 @@ Module Renaming.
       induction e; intros.
       + subst; simpl in *; inversion H; subst; auto.
       + subst; simpl in *; inversion H; subst. apply rename_equiv in VAR. auto.
-      + specialize (IHe1 st' Heqst' rename_equiv (rename_expr r e1)).
+      + specialize (IHe1 st' Heqst' (rename_expr r e1)).
         assert (rename_expr r e1 = rename_expr r e1) by reflexivity.
         specialize (IHe1 H0).
-        specialize (IHe2 st' Heqst' rename_equiv (rename_expr r e2)).
+        specialize (IHe2 st' Heqst' (rename_expr r e2)).
         assert (rename_expr r e2 = rename_expr r e2) by reflexivity.
         specialize (IHe2 H1).  
         assert (e' = Bop b (rename_expr r e1) (rename_expr r e2)).
